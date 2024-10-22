@@ -63,9 +63,9 @@ void brgemm_example() {
     const memory::dim ldd = N; // Leading dimension for an actual output.
     const memory::dim batch_size = n_calls - 1;
 
-    memory::data_type a_dt = dt::u8;
-    memory::data_type b_dt = dt::s8;
-    memory::data_type c_dt = dt::s32; // Accumulator data type.
+    memory::data_type a_dt = dt::f32;
+    memory::data_type b_dt = dt::f32;
+    memory::data_type c_dt = dt::f32; // Accumulator data type.
     memory::data_type d_dt = dt::f32; // Output data type.
 
     // A, B, and C tensors dimensions.
@@ -141,8 +141,8 @@ void brgemm_example() {
     auto C_mem = memory(C_md, engine);
     auto D_mem = memory(D_md, engine);
 
-    const auto *A_ptr = reinterpret_cast<uint8_t *>(A_mem.get_data_handle());
-    auto *B_ptr = reinterpret_cast<uint8_t *>(B_mem.get_data_handle());
+    const auto *A_ptr = reinterpret_cast<float *>(A_mem.get_data_handle());
+    auto *B_ptr = reinterpret_cast<float *>(B_mem.get_data_handle());
 
     const size_t a_dt_size
             = memory::data_type_size(A_mem.get_desc().get_data_type());
@@ -193,7 +193,7 @@ void brgemm_example() {
             brg.set_add_C(true);
             // Finalize the initialization.
             brg.finalize();
-            // Generate the executable JIT code for the objects.
+            // Generate the executable JIT code for the objects.    
             brg.generate();
         } catch (error &e) {
             if (e.status == dnnl_unimplemented)
@@ -211,7 +211,7 @@ void brgemm_example() {
         // Instruct the kernel to append the result to C tensor.
         brg_po.set_add_C(true);
         // Specify post-ops for the brgemm object.
-        brg_po.set_post_ops(ldd, d_dt, brgemm_ops);
+        //brg_po.set_post_ops(ldd, d_dt, brgemm_ops);
         // Specify quantization scales for B.
         if (b_dt == dt::s8 || b_dt == dt::u8) {
             brg_po.set_B_scales(/* mask = */ 2);
@@ -233,9 +233,9 @@ void brgemm_example() {
     // is expecting it. This is a service space needed, has nothing in common
     // with accumulation buffer.
     size_t scratchpad_size = brg_po.get_scratchpad_size();
-    std::vector<uint8_t> scratchpad(scratchpad_size);
+    std::vector<float> scratchpad(scratchpad_size);
 
-    uint8_t *B_blocked = nullptr;
+    float *B_blocked = nullptr;
     void *B_base_ptr = B_ptr;
     size_t blocked_B_size = 0;
 
@@ -259,7 +259,7 @@ void brgemm_example() {
         // Size of the packed tensor.
         blocked_B_size = ldb * K_k * memory::data_type_size(b_dt);
 
-        B_blocked = new uint8_t[blocked_B_size * n_calls];
+        B_blocked = new float[blocked_B_size * n_calls];
         B_base_ptr = B_blocked;
 
         // Pack B routine execution.
@@ -316,7 +316,7 @@ void brgemm_example() {
     // to store final output result after finishing accumulation and post-ops
     // application.
     brg_po.execute(A_ptr, B_base_ptr, A_B_po_offsets, C_ptr,
-            D_mem.get_data_handle(), scratchpad.data(), params);
+            D_mem.get_data_handle(), scratchpad.data());
 
     // Once all computations are done, need to release HW context.
     brgemm::release_hw_context();
@@ -344,12 +344,12 @@ void brgemm_example() {
                 D_user_data[m * N + n]
                         += A_user_data[m * K + k] * B_user_data[k * N + n];
             }
-            // B scales ref
-            D_user_data[m * N + n] *= B_scales_user_data[n];
-            // Relu post-op ref
-            D_user_data[m * N + n] = std::max(D_user_data[m * N + n], 0.f);
-            // Binary post-op ref
-            D_user_data[m * N + n] += binary_add_user_data[0];
+            // // B scales ref
+            // D_user_data[m * N + n] *= B_scales_user_data[n];
+            // // Relu post-op ref
+            // D_user_data[m * N + n] = std::max(D_user_data[m * N + n], 0.f);
+            // // Binary post-op ref
+            // D_user_data[m * N + n] += binary_add_user_data[0];
 
             const float diff
                     = fabsf(D_user_data[m * N + n] - D_data[m * N + n]);
